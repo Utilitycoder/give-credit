@@ -1,36 +1,22 @@
-# ERC721 implementation for Soroban
+#![no_std]
 
-Reference: [ERC721 standard](https://eips.ethereum.org/EIPS/eip-721)
+use erc721::{DatakeyMetadata, ERC721Metadata, ERC721};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, Address, BytesN, Env, String,
+};
 
-Reference implementation: [OpenZeppelin ERC721](https://docs.openzeppelin.com/contracts/3.x/erc721)
-
-You can find here a soroban implementation of ERC721, including standard
-extensions Enumerable, Metadata and Burnable. The safeTransfer has been 
-ommited since we don't have, for now, wallet contracts able to answer.
-
-Each extenstion is enabled using the corresponding feature.
-
-The following example with only metadat extension will require the following Cargo.toml snippet:
-```toml
-[dependencies]
-erc721 = { workspace = true, default-features = false, features = ["metadata"] }
-```
-
-## Create your own contract implementing ERC721
-```rust
+#[contracttype]
+pub struct Id();
 
 #[contract]
-pub struct MyNFTCollection;
+pub struct GiveCreditNFTCollection;
 
-///
-/// Basic implementation with metadata only
-///
+
 #[contractimpl]
-impl MyNFTCollection {
-
+impl GiveCreditNFTCollection {
     pub fn initialize(env: Env, admin: Address) {
-        let name = String::from_slice(&env, "Non-Fungible Token");
-        let sym = String::from_slice(&env, "NFT");
+        let name = String::from_slice(&env, "Give Credit Token");
+        let sym = String::from_slice(&env, "GCT");
         erc721::ERC721Contract::initialize(env, admin, name, sym);
     }
 
@@ -39,11 +25,17 @@ impl MyNFTCollection {
     }
 
     pub fn mint(env: Env, to: Address, uri: String) {
-        // Check the destination approved the transaction
-        to.require_auth();
+        // Check ownly the admin can mint
+        erc721::get_admin(&env).require_auth();
 
-        // Token Uri must be set at some point, just an example here.
-        DatakeyMetadata::Uri(token_id).set(&env, &uri);
+        // Get and increment token id
+        let token_id = env.storage().instance().get(&Id()).unwrap_or(0);
+        env.storage().instance().set(&Id(), &(token_id + 1));
+
+        // set the uri for the token id
+        env.storage()
+            .persistent()
+            .set(&DatakeyMetadata::Uri(token_id), &uri);
 
         // Mint
         erc721::ERC721Contract::mint(env.clone(), to.clone(), token_id)
@@ -102,8 +94,8 @@ impl MyNFTCollection {
     }
 
     pub fn token_uri(env: Env, token_id: u32) -> String {
-        erc721::ERC721Contract::token_uri(token_id)
+        erc721::ERC721Contract::token_uri(env, token_id)
     }
 }
 
-```
+mod test;

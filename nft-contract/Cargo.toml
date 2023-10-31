@@ -3,7 +3,7 @@ resolver = "2"
 members = [
   "storage",
   "erc721",
-  "token",
+  "nft",
 ]
 
 [workspace.dependencies]

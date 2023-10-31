@@ -1,7 +1,7 @@
 #![cfg(test)]
 extern crate std;
 
-use crate::{contract::Token, TokenClient};
+use crate::{contract::Token, contract::give_credit_nft, TokenClient};
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation},
@@ -10,7 +10,9 @@ use soroban_sdk::{
 
 fn create_token<'a>(e: &Env, admin: &Address, pub_node: &Address) -> TokenClient<'a> {
     let token = TokenClient::new(e, &e.register_contract(None, Token {}));
-    token.initialize(admin, pub_node, &7);
+    let nft_contract_id = e.register_contract_wasm(None, give_credit_nft::WASM);
+    std::println!("{:?}", nft_contract_id);
+    token.initialize(admin, pub_node, &nft_contract_id, &7);
     token
 }
 
@@ -78,6 +80,7 @@ fn test() {
     );
     assert_eq!(token.balance(&user1), 400);
     assert_eq!(token.balance(&user2), 480);
+    std::println!("{}", token.balance(&user2));
     assert_eq!(token.balance(&pub_node), 120);
 
     token.transfer_from(&user3, &user2, &user1, &400);
@@ -242,9 +245,10 @@ fn initialize_already_initialized() {
     let e = Env::default();
     let admin = Address::random(&e);
     let user3 = Address::random(&e);
+    let nft_address = Address::random(&e);
     let token = create_token(&e, &admin, &user3);
 
-    token.initialize(&admin, &user3, &10);
+    token.initialize(&admin, &user3, &nft_address, &10);
 }
 
 #[test]
@@ -257,6 +261,7 @@ fn decimal_is_over_max() {
     token.initialize(
         &admin,
         &user3,
+        &Address::random(&e),
         &(u32::from(u8::MAX) + 1),
     );
 }

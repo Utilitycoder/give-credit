@@ -459,6 +459,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6fb8d784f27acf97159b40fc4db5ecd8aa23b9ad5ef69cdd136d3bc80665f0c0"
 
 [[package]]
+name = "give_credit_nft"
+version = "0.1.0"
+dependencies = [
+ "erc721",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "group"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1088,24 +1096,6 @@ dependencies = [
  "stellar-xdr",
  "syn",
  "thiserror",
-]
-
-[[package]]
-name = "soroban-token-contract"
-version = "0.0.6"
-dependencies = [
- "erc721",
- "soroban-sdk",
- "soroban-token-sdk",
-]
-
-[[package]]
-name = "soroban-token-sdk"
-version = "20.0.0-rc2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7294182d2197ac4da58163ca8f9c2e4df2045e5b81752928d82da9289ef366ee"
-dependencies = [
- "soroban-sdk",
 ]
 
 [[package]]
