@@ -10,7 +10,7 @@ use soroban_token_sdk::TokenUtils;
 
 pub mod give_credit_nft {
     soroban_sdk::contractimport!(
-        file = "/Users/tm/give-credit/nft-contract/target/wasm32-unknown-unknown/release/give_credit_nft.wasm",  
+        file = "give_credit_nft.wasm",  
     );
 }
 
