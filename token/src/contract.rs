@@ -10,7 +10,7 @@ use soroban_token_sdk::TokenUtils;
 
 pub mod give_credit_nft {
     soroban_sdk::contractimport!(
-        file = "/Users/tm/give-credit/token/src/give_credit_nft.wasm",  
+        file = "/Users/tm/give-credit/nft-contract/target/wasm32-unknown-unknown/release/give_credit_nft.wasm",  
     );
 }
 
@@ -146,8 +146,7 @@ impl token::Interface for Token {
 
         let nft_contract_address: Address = e.storage().instance().get(&NFT_ADDRESS).unwrap();
         let client = give_credit_nft::Client::new(&e, &nft_contract_address);
-        let uri = String::from_slice(&e, "amount");
-        client.mint(&from.clone(), &uri);
+        client.mint(&from.clone());
 
         TokenUtils::new(&e).events().transfer(from, to, amount);
     }

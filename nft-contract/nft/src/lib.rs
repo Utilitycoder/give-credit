@@ -1,8 +1,8 @@
 #![no_std]
 
-use erc721::{DatakeyMetadata, ERC721Metadata, ERC721};
+use erc721::{ERC721Metadata, ERC721};
 use soroban_sdk::{
-    contract, contractimpl, contracttype, Address, BytesN, Env, String,
+    contract, contractimpl, contracttype, Address, Bytes, BytesN, Env, String,
 };
 
 #[contracttype]
@@ -24,18 +24,10 @@ impl GiveCreditNFTCollection {
         erc721::ERC721Contract::upgrade(env, wasm_hash)
     }
 
-    pub fn mint(env: Env, to: Address, uri: String) {
-        // Check ownly the admin can mint
-        erc721::get_admin(&env).require_auth();
-
+    pub fn mint(env: Env, to: Address) {
         // Get and increment token id
         let token_id = env.storage().instance().get(&Id()).unwrap_or(0);
         env.storage().instance().set(&Id(), &(token_id + 1));
-
-        // set the uri for the token id
-        env.storage()
-            .persistent()
-            .set(&DatakeyMetadata::Uri(token_id), &uri);
 
         // Mint
         erc721::ERC721Contract::mint(env.clone(), to.clone(), token_id)
@@ -94,8 +86,45 @@ impl GiveCreditNFTCollection {
     }
 
     pub fn token_uri(env: Env, token_id: u32) -> String {
-        erc721::ERC721Contract::token_uri(env, token_id)
+        if token_id < env.storage().instance().get(&Id()).unwrap_or(0) {
+            const BASE: &str = "http://localhost:3000/test/";
+            //const BASE: &str = "https://givecredit.com/test/";
+            let d = to_hex(token_id);
+
+            // concat
+            let mut uri = Bytes::new(&env);
+            uri.extend_from_slice(BASE.as_bytes());
+            uri.extend_from_slice(d.as_slice());
+            uri.extend_from_slice(".json".as_bytes());
+
+            // Bytes to &str
+            let mut slice = [0; BASE.len() + 10];
+            uri.copy_into_slice(&mut slice);
+            let struri = core::str::from_utf8(slice.as_slice()).unwrap();
+
+            String::from_slice(&env, struri)
+        } else {
+            String::from_slice(&env, "No NFT with token_id")
+        }
     }
+}
+
+fn to_hex(n: u32) -> [u8; 5] {
+    let mut out = [0; 5];
+    out[0] = b'0';
+    out[1] = b'x';
+    for i in (0..3).rev() {
+        let x = ((n >> (i * 4)) & 0xf) as u8;
+        let digit: u8 = match x {
+            x @ 0..=9 => b'0' + x,
+            x @ 10..=15 => b'a' + (x - 10),
+            x => panic!("number not in the range 0..16: {}", x),
+        };
+
+        out[2 - i + 2] = digit;
+    }
+
+    out
 }
 
 mod test;
