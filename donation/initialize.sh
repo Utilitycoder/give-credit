@@ -6,4 +6,4 @@ soroban contract invoke \
     --admin givecredit \
     --decimal 7 \
     --fee_address GDZJSPRSBTAJPAQ4NG6Y2ZCWHEX5HMS253TYVNAQJRPJHY27JPOHBIPZ \
-    --nft_address CAQMKIM64UCAILAERAK56DBFQ36J6MBX4UFDS6UKTTWMRQAN3EIQBWY6 \
+    --nft_address $(cat ../nft-contract/.soroban/contract-id) \

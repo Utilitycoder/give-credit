@@ -1,5 +1,5 @@
 [package]
-name = "give_credit_token"
+name = "donation"
 description = "Mock usdc token contract"
 version = "0.0.1"
 edition = "2021"
