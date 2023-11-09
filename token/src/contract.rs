@@ -1,18 +1,14 @@
+//! This contract demonstrates a sample implementation of the Soroban token
+//! interface.
 use crate::admin::{has_administrator, read_administrator, write_administrator};
 use crate::allowance::{read_allowance, spend_allowance, write_allowance};
 use crate::balance::{read_balance, receive_balance, spend_balance};
 use crate::metadata::{read_decimal, read_name, read_symbol, write_metadata};
 use crate::storage_types::{INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD};
 use soroban_sdk::token::{self, Interface as _};
-use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, Symbol, symbol_short};
+use soroban_sdk::{contract, contractimpl, Address, Env, String};
 use soroban_token_sdk::metadata::TokenMetadata;
 use soroban_token_sdk::TokenUtils;
-
-pub mod give_credit_nft {
-    soroban_sdk::contractimport!(
-        file = "give_credit_nft.wasm",  
-    );
-}
 
 fn check_nonnegative_amount(amount: i128) {
     if amount < 0 {
@@ -20,28 +16,18 @@ fn check_nonnegative_amount(amount: i128) {
     }
 }
 
-const PUB_NODE_ADD: Symbol = symbol_short!("");
-const NFT_ADDRESS: Symbol = symbol_short!("");
-
-#[contracttype]
-pub struct Id();
-
 #[contract]
 pub struct Token;
 
 #[contractimpl]
 impl Token {
-    pub fn initialize(e: Env, admin: Address, fee_address: Address, nft_address: Address, decimal: u32) {
+    pub fn initialize(e: Env, admin: Address, decimal: u32) {
         let name = String::from_slice(&e, "USDC");
         let symbol = String::from_slice(&e, "USDC");
-
-        e.storage().persistent().set(&PUB_NODE_ADD, &fee_address);
-        e.storage().instance().set(&NFT_ADDRESS, &nft_address);
 
         if has_administrator(&e) {
             panic!("already initialized")
         }
-
         write_administrator(&e, &admin);
         if decimal > u8::MAX.into() {
             panic!("Decimal must fit in a u8");
@@ -54,11 +40,7 @@ impl Token {
                 name,
                 symbol,
             },
-        );
-
-        let nft_contract_address: Address = e.storage().instance().get(&NFT_ADDRESS).unwrap();
-        let client = give_credit_nft::Client::new(&e, &nft_contract_address);
-        client.initialize(&admin);
+        )
     }
 
     pub fn mint(e: Env, to: Address, amount: i128) {
@@ -135,19 +117,7 @@ impl token::Interface for Token {
             .bump(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         spend_balance(&e, from.clone(), amount);
-
-        let pub_node_addr: Address = e.storage().persistent().get(&PUB_NODE_ADD).unwrap();
-
-        let donation = amount * 80 / 100;
-        let fee = amount - donation;
-
-        receive_balance(&e, to.clone(), donation);
-        receive_balance(&e, pub_node_addr.clone(), fee);
-
-        let nft_contract_address: Address = e.storage().instance().get(&NFT_ADDRESS).unwrap();
-        let client = give_credit_nft::Client::new(&e, &nft_contract_address);
-        client.mint(&from.clone());
-
+        receive_balance(&e, to.clone(), amount);
         TokenUtils::new(&e).events().transfer(from, to, amount);
     }
 

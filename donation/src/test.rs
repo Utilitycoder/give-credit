@@ -1,7 +1,7 @@
 #![cfg(test)]
 extern crate std;
 
-use crate::{contract::Token, TokenClient};
+use crate::{GiveCredit, GiveCreditClient};
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation},
@@ -14,17 +14,49 @@ mod nft_contract {
     );
 }
 
-struct Clients<'a> {
-    token: TokenClient<'a>,
-    nft: nft_contract::Client<'a>,
+mod token {
+    soroban_sdk::contractimport!(
+        file = "/Users/tm/give-credit/token/target/wasm32-unknown-unknown/release/give_credit_token.wasm",  
+    );
 }
 
-fn create_token<'a>(e: &Env, admin: &Address, pub_node: &Address) -> Clients<'a> {
-    let token = TokenClient::new(e, &e.register_contract(None, Token {}));
+struct Clients<'a> {
+    token: token::Client<'a>,
+    nft: nft_contract::Client<'a>,
+    token_contract_id: Address,
+    nft_contract_id: Address,
+}
+
+fn create_token<'a>(e: &Env) -> Clients<'a> {
+    let token_contract_id = e.register_contract_wasm(None, token::WASM);
+    let token = token::Client::new(e, &token_contract_id);
     let nft_contract_id = e.register_contract_wasm(None, nft_contract::WASM);
     let nft = nft_contract::Client::new(e, &nft_contract_id);
-    token.initialize(admin, pub_node, &nft_contract_id, &7);
-    Clients { token, nft }
+    Clients {
+        token,
+        nft,
+        token_contract_id,
+        nft_contract_id,
+    }
+}
+
+fn create_carbon_contract<'a>(
+    e: &Env,
+    admin: &Address,
+    nft_address: Address,
+    pub_node_addr: &Address,
+    token_addr: Address,
+    stellar_carbon_addr: &Address,
+) -> GiveCreditClient<'a> {
+    let carbon_contract = GiveCreditClient::new(e, &e.register_contract(None, GiveCredit {}));
+    carbon_contract.initialize(
+        admin,
+        &nft_address,
+        pub_node_addr,
+        &token_addr,
+        stellar_carbon_addr,
+    );
+    carbon_contract
 }
 
 #[test]
@@ -33,250 +65,65 @@ fn test() {
     e.mock_all_auths();
 
     let admin1 = Address::random(&e);
-    let admin2 = Address::random(&e);
     let user1 = Address::random(&e);
     let user2 = Address::random(&e);
-    let user3 = Address::random(&e);
+    let stellar_carbon = Address::random(&e);
     let pub_node = Address::random(&e);
-    let client = create_token(&e, &admin1, &pub_node);
+    let client = create_token(&e);
 
-
-
-    client.token.mint(&user1, &1000);
-    assert_eq!(
-        e.auths(),
-        std::vec![(
-            admin1.clone(),
-            AuthorizedInvocation {
-                function: AuthorizedFunction::Contract((
-                    client.token.address.clone(),
-                    symbol_short!("mint"),
-                    (&user1, 1000_i128).into_val(&e),
-                )),
-                sub_invocations: std::vec![]
-            }
-        )]
+    let carbon_client = create_carbon_contract(
+        &e,
+        &admin1,
+        client.nft_contract_id,
+        &pub_node,
+        client.token_contract_id,
+        &stellar_carbon,
     );
+
+    // Mint some tokens
+    client.token.initialize(&admin1, &7);
+    client.token.mint(&user1, &1000);
     assert_eq!(client.token.balance(&user1), 1000);
 
-    client.token.approve(&user2, &user3, &500, &200);
-    assert_eq!(
-        e.auths(),
-        std::vec![(
-            user2.clone(),
-            AuthorizedInvocation {
-                function: AuthorizedFunction::Contract((
-                    client.token.address.clone(),
-                    symbol_short!("approve"),
-                    (&user2, &user3, 500_i128, 200_u32).into_val(&e),
-                )),
-                sub_invocations: std::vec![]
-            }
-        )]
-    );
-    assert_eq!(client.token.allowance(&user2, &user3), 500);
-
-    client.token.transfer(&user1, &user2, &600);
-    assert_eq!(
-        e.auths(),
-        std::vec![(
-            user1.clone(),
-            AuthorizedInvocation {
-                function: AuthorizedFunction::Contract((
-                    client.token.address.clone(),
-                    symbol_short!("transfer"),
-                    (&user1, &user2, 600_i128).into_val(&e),
-                )),
-                sub_invocations: std::vec![]
-            }
-        )]
-    );
-    assert_eq!(client.token.balance(&user1), 400);
+    // Verify that Givecredit contract holds the tokens in a silo when the balance is less than 100
+    carbon_client.deposit(&user1, &50);
+    assert_eq!(client.token.balance(&user1), 950);
     assert_eq!(client.nft.balance_of(&user1), 1);
-    assert_eq!(client.token.balance(&user2), 480);
-    std::println!("{}", client.token.balance(&user2));
-    assert_eq!(client.token.balance(&pub_node), 120);
+    assert_eq!(client.token.balance(&carbon_client.address), 50);
 
-    client.token.transfer_from(&user3, &user2, &user1, &400);
-    assert_eq!(
-        e.auths(),
-        std::vec![(
-            user3.clone(),
-            AuthorizedInvocation {
-                function: AuthorizedFunction::Contract((
-                    client.token.address.clone(),
-                    Symbol::new(&e, "transfer_from"),
-                    (&user3, &user2, &user1, 400_i128).into_val(&e),
-                )),
-                sub_invocations: std::vec![]
-            }
-        )]
-    );
-    assert_eq!(client.token.balance(&user1), 800);
-    assert_eq!(client.token.balance(&user2), 80);
+    // Verify that Givecredit contract sends the tokens to the pub node and stellar carbon when the balance is greater than 100
+    client.token.transfer(&user1, &user2, &500);
+    assert_eq!(client.token.balance(&user2), 500);
 
-    client.token.transfer(&user1, &user3, &300);
-    assert_eq!(client.token.balance(&user1), 500);
-    assert_eq!(client.nft.balance_of(&user1), 2);
-    assert_eq!(client.token.balance(&user3), 240);
-    assert_eq!(client.token.balance(&pub_node), 180);
+    e.budget().reset_unlimited();
+    carbon_client.deposit(&user2, &100);
+    assert_eq!(client.token.balance(&user2), 400);
+    assert_eq!(client.nft.balance_of(&user2), 1);
 
-    client.token.set_admin(&admin2);
-    assert_eq!(
-        e.auths(),
-        std::vec![(
-            admin1.clone(),
-            AuthorizedInvocation {
-                function: AuthorizedFunction::Contract((
-                    client.token.address.clone(),
-                    symbol_short!("set_admin"),
-                    (&admin2,).into_val(&e),
-                )),
-                sub_invocations: std::vec![]
-            }
-        )]
-    );
-
-    // Increase to 500
-    client.token.approve(&user2, &user3, &500, &200);
-    assert_eq!(client.token.allowance(&user2, &user3), 500);
-    client.token.approve(&user2, &user3, &0, &200);
-    assert_eq!(
-        e.auths(),
-        std::vec![(
-            user2.clone(),
-            AuthorizedInvocation {
-                function: AuthorizedFunction::Contract((
-                    client.token.address.clone(),
-                    symbol_short!("approve"),
-                    (&user2, &user3, 0_i128, 200_u32).into_val(&e),
-                )),
-                sub_invocations: std::vec![]
-            }
-        )]
-    );
-    assert_eq!(client.token.allowance(&user2, &user3), 0);
+    assert_eq!(client.token.balance(&stellar_carbon), 120);
+    assert_eq!(client.token.balance(&pub_node), 30);
+    assert_eq!(client.token.balance(&carbon_client.address), 0);
 }
 
 #[test]
-fn test_burn() {
+fn test_carbon_price() {
     let e = Env::default();
     e.mock_all_auths();
 
+    let pub_node = Address::random(&e);
+    let stellar_carbon = Address::random(&e);
     let admin = Address::random(&e);
-    let user1 = Address::random(&e);
-    let user2 = Address::random(&e);
-    let user3 = Address::random(&e);
-    let client = create_token(&e, &admin, &user3);
 
-    client.token.mint(&user1, &1000);
-    assert_eq!(client.token.balance(&user1), 1000);
-
-    client.token.approve(&user1, &user2, &500, &200);
-    assert_eq!(client.token.allowance(&user1, &user2), 500);
-
-    client.token.burn_from(&user2, &user1, &500);
-    assert_eq!(
-        e.auths(),
-        std::vec![(
-            user2.clone(),
-            AuthorizedInvocation {
-                function: AuthorizedFunction::Contract((
-                    client.token.address.clone(),
-                    symbol_short!("burn_from"),
-                    (&user2, &user1, 500_i128).into_val(&e),
-                )),
-                sub_invocations: std::vec![]
-            }
-        )]
-    );
-
-    assert_eq!(client.token.allowance(&user1, &user2), 0);
-    assert_eq!(client.token.balance(&user1), 500);
-    assert_eq!(client.token.balance(&user2), 0);
-
-    client.token.burn(&user1, &500);
-    assert_eq!(
-        e.auths(),
-        std::vec![(
-            user1.clone(),
-            AuthorizedInvocation {
-                function: AuthorizedFunction::Contract((
-                    client.token.address.clone(),
-                    symbol_short!("burn"),
-                    (&user1, 500_i128).into_val(&e),
-                )),
-                sub_invocations: std::vec![]
-            }
-        )]
-    );
-
-    assert_eq!(client.token.balance(&user1), 0);
-    assert_eq!(client.token.balance(&user2), 0);
-}
-
-#[test]
-#[should_panic(expected = "insufficient balance")]
-fn transfer_insufficient_balance() {
-    let e = Env::default();
-    e.mock_all_auths();
-
-    let admin = Address::random(&e);
-    let user1 = Address::random(&e);
-    let user2 = Address::random(&e);
-    let user3 = Address::random(&e);
-    let client = create_token(&e, &admin, &user3);
-
-    client.token.mint(&user1, &1000);
-    assert_eq!(client.token.balance(&user1), 1000);
-
-    client.token.transfer(&user1, &user2, &1001);
-}
-
-#[test]
-#[should_panic(expected = "insufficient allowance")]
-fn transfer_from_insufficient_allowance() {
-    let e = Env::default();
-    e.mock_all_auths();
-
-    let admin = Address::random(&e);
-    let user1 = Address::random(&e);
-    let user2 = Address::random(&e);
-    let user3 = Address::random(&e);
-    let client = create_token(&e, &admin, &user3);
-
-    client.token.mint(&user1, &1000);
-    assert_eq!(client.token.balance(&user1), 1000);
-
-    client.token.approve(&user1, &user3, &100, &200);
-    assert_eq!(client.token.allowance(&user1, &user3), 100);
-
-    client.token.transfer_from(&user3, &user1, &user2, &101);
-}
-
-#[test]
-#[should_panic(expected = "already initialized")]
-fn initialize_already_initialized() {
-    let e = Env::default();
-    let admin = Address::random(&e);
-    let user3 = Address::random(&e);
-    let nft_address = Address::random(&e);
-    let client = create_token(&e, &admin, &user3);
-
-    client.token.initialize(&admin, &user3, &nft_address, &10);
-}
-
-#[test]
-#[should_panic(expected = "Decimal must fit in a u8")]
-fn decimal_is_over_max() {
-    let e = Env::default();
-    let admin = Address::random(&e);
-    let user3 = Address::random(&e);
-    let token = TokenClient::new(&e, &e.register_contract(None, Token {}));
-    token.initialize(
+    let client = create_token(&e);
+    let carbon_client = create_carbon_contract(
+        &e,
         &admin,
-        &user3,
-        &Address::random(&e),
-        &(u32::from(u8::MAX) + 1),
+        client.nft_contract_id,
+        &pub_node,
+        client.token_contract_id,
+        &stellar_carbon,
     );
+
+    carbon_client.update_carbon_price(&100);
+    assert_eq!(carbon_client.get_carbon_price(), 100);
 }
